@@ -52,6 +52,11 @@ void QuestEngine::cleanup()
 {
 	if (_isInitialized)
 	{
+		VK_CHECK(vkDeviceWaitIdle(_device));
+
+		vkDestroySemaphore(_device, _presentSemaphore, nullptr);
+		vkDestroySemaphore(_device, _renderSemaphore, nullptr);
+		vkDestroyFence(_device, _renderFence, nullptr);
 		vkDestroyCommandPool(_device, _commandPool, nullptr);
 
 		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
