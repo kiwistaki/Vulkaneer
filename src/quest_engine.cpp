@@ -43,6 +43,7 @@ void QuestEngine::init()
 	init_default_renderpass();
 	init_framebuffers();
 	init_sync_structures();
+	init_pipelines();
 
 	//everything went fine
 	_isInitialized = true;
@@ -54,18 +55,7 @@ void QuestEngine::cleanup()
 	{
 		VK_CHECK(vkDeviceWaitIdle(_device));
 
-		vkDestroySemaphore(_device, _presentSemaphore, nullptr);
-		vkDestroySemaphore(_device, _renderSemaphore, nullptr);
-		vkDestroyFence(_device, _renderFence, nullptr);
-		vkDestroyCommandPool(_device, _commandPool, nullptr);
-
-		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
-		vkDestroyRenderPass(_device, _renderPass, nullptr);
-		for (int i = 0; i < _framebuffers.size(); i++)
-		{
-			vkDestroyFramebuffer(_device, _framebuffers[i], nullptr);
-			vkDestroyImageView(_device, _swapchainImageViews[i], nullptr);
-		}
+		_mainDeletionQueue.flush();
 
 		vkDestroyDevice(_device, nullptr);
 		vkDestroySurfaceKHR(_instance, _surface, nullptr);
@@ -90,15 +80,15 @@ void QuestEngine::draw()
 	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
 
 	VkClearValue clearValue;
-	float flash = abs(sin(_frameNumber / 120.f));
-	clearValue.color = { { 0.0f, 0.0f, flash, 1.0f } };
+	clearValue.color = { { 0.05f, 0.05f, 0.05f, 1.0f } };
 
 	VkRenderPassBeginInfo rpInfo = Quest::renderpass_begin_info(_renderPass, _windowExtent, _framebuffers[swapchainImageIndex]);
 	rpInfo.clearValueCount = 1;
 	rpInfo.pClearValues = &clearValue;
 	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 	{
-
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
+		vkCmdDraw(cmd, 3, 1, 0, 0);
 	}
 	vkCmdEndRenderPass(cmd);
 	VK_CHECK(vkEndCommandBuffer(cmd));
@@ -144,7 +134,6 @@ void QuestEngine::run()
 void QuestEngine::init_vulkan()
 {
 	vkb::InstanceBuilder builder;
-
 	auto inst_ret = builder.set_app_name("Quest Application")
 		.request_validation_layers(true)
 		.require_api_version(1, 2, 0)
@@ -158,9 +147,18 @@ void QuestEngine::init_vulkan()
 	SDL_Vulkan_CreateSurface(_window, _instance, &_surface);
 
 	vkb::PhysicalDeviceSelector selector{ vkb_inst };
+	VkPhysicalDeviceFeatures feats{};
+	feats.pipelineStatisticsQuery = true;
+	feats.multiDrawIndirect = true;
+	feats.drawIndirectFirstInstance = true;
+	feats.samplerAnisotropy = true;
+	feats.fillModeNonSolid = true;
+	selector.set_required_features(feats);
+
 	vkb::PhysicalDevice physicalDevice = selector
 		.set_minimum_version(1, 2)
 		.set_surface(_surface)
+		.add_required_extension(VK_EXT_SAMPLER_FILTER_MINMAX_EXTENSION_NAME)
 		.select()
 		.value();
 
@@ -175,9 +173,10 @@ void QuestEngine::init_vulkan()
 void QuestEngine::init_swapchain()
 {
 	vkb::SwapchainBuilder swapchainBuilder{ _chosenGPU,_device,_surface };
-
+	VkSurfaceFormatKHR desiredSurfaceFormat = { VK_FORMAT_B8G8R8A8_UNORM, VK_COLORSPACE_SRGB_NONLINEAR_KHR };
 	vkb::Swapchain vkbSwapchain = swapchainBuilder
 		.use_default_format_selection()
+		.set_desired_format(desiredSurfaceFormat)
 		.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
 		.set_desired_extent(_windowExtent.width, _windowExtent.height)
 		.build()
@@ -187,6 +186,11 @@ void QuestEngine::init_swapchain()
 	_swapchainImages = vkbSwapchain.get_images().value();
 	_swapchainImageViews = vkbSwapchain.get_image_views().value();
 	_swapchainImageFormat = vkbSwapchain.image_format;
+
+	_mainDeletionQueue.push_function([=]()
+	{
+		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
+	});
 }
 
 void QuestEngine::init_commands()
@@ -196,6 +200,11 @@ void QuestEngine::init_commands()
 	
 	VkCommandBufferAllocateInfo cmdAllocInfo = Quest::command_buffer_allocate_info(_commandPool, 1);
 	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_mainCommandBuffer));
+
+	_mainDeletionQueue.push_function([=]()
+	{
+		vkDestroyCommandPool(_device, _commandPool, nullptr);
+	});
 }
 
 void QuestEngine::init_default_renderpass()
@@ -226,6 +235,11 @@ void QuestEngine::init_default_renderpass()
 	render_pass_info.subpassCount = 1;
 	render_pass_info.pSubpasses = &subpass;
 	VK_CHECK(vkCreateRenderPass(_device, &render_pass_info, nullptr, &_renderPass));
+
+	_mainDeletionQueue.push_function([=]()
+	{
+		vkDestroyRenderPass(_device, _renderPass, nullptr);
+	});
 }
 
 void QuestEngine::init_framebuffers()
@@ -238,6 +252,12 @@ void QuestEngine::init_framebuffers()
 
 		fb_info.pAttachments = &_swapchainImageViews[i];
 		VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_framebuffers[i]));
+
+		_mainDeletionQueue.push_function([=]()
+		{
+			vkDestroyFramebuffer(_device, _framebuffers[i], nullptr);
+			vkDestroyImageView(_device, _swapchainImageViews[i], nullptr);
+		});
 	}
 }
 
@@ -249,4 +269,135 @@ void QuestEngine::init_sync_structures()
 	VkSemaphoreCreateInfo semaphoreCreateInfo = Quest::semaphore_create_info();
 	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_presentSemaphore));
 	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_renderSemaphore));
+	
+	_mainDeletionQueue.push_function([=]()
+	{
+		vkDestroySemaphore(_device, _presentSemaphore, nullptr);
+		vkDestroySemaphore(_device, _renderSemaphore, nullptr);
+		vkDestroyFence(_device, _renderFence, nullptr);
+	});
+}
+
+void QuestEngine::init_pipelines()
+{
+	VkShaderModule triangleVertexShader;
+	VkShaderModule triangleFragShader;
+	if (!load_shader_module("../../shaders/triangle.vert.spv", &triangleVertexShader))
+		std::cout << "Error when building the triangle vertex shader module" << std::endl;
+	else
+		std::cout << "Triangle vertex shader succesfully loaded" << std::endl;
+	
+	if (!load_shader_module("../../shaders/triangle.frag.spv", &triangleFragShader))
+		std::cout << "Error when building the triangle fragment shader module" << std::endl;
+	else
+		std::cout << "Triangle fragment shader succesfully loaded" << std::endl;
+
+	VkPipelineLayoutCreateInfo pipeline_layout_info = Quest::pipeline_layout_create_info();
+	VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_trianglePipelineLayout));
+
+	PipelineBuilder pipelineBuilder;
+	pipelineBuilder._shaderStages.push_back(Quest::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, triangleVertexShader));
+	pipelineBuilder._shaderStages.push_back(Quest::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, triangleFragShader));
+	pipelineBuilder._vertexInputInfo = Quest::vertex_input_state_create_info();
+	pipelineBuilder._inputAssembly = Quest::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+	pipelineBuilder._viewport.x = 0.0f;
+	pipelineBuilder._viewport.y = 0.0f;
+	pipelineBuilder._viewport.width = (float)_windowExtent.width;
+	pipelineBuilder._viewport.height = (float)_windowExtent.height;
+	pipelineBuilder._viewport.minDepth = 0.0f;
+	pipelineBuilder._viewport.maxDepth = 1.0f;
+	pipelineBuilder._scissor.offset = { 0, 0 };
+	pipelineBuilder._scissor.extent = _windowExtent;
+	pipelineBuilder._rasterizer = Quest::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
+	pipelineBuilder._multisampling = Quest::multisampling_state_create_info();
+	pipelineBuilder._colorBlendAttachment = Quest::color_blend_attachment_state();
+	pipelineBuilder._pipelineLayout = _trianglePipelineLayout;
+	_trianglePipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+
+	_mainDeletionQueue.push_function([=]()
+	{
+		vkDestroyPipeline(_device, _trianglePipeline, nullptr);
+		vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
+		vkDestroyShaderModule(_device, triangleFragShader, nullptr);
+		vkDestroyShaderModule(_device, triangleVertexShader, nullptr);
+	});
+}
+
+bool QuestEngine::load_shader_module(const char* filePath, VkShaderModule* outShaderModule)
+{
+	std::ifstream file(filePath, std::ios::ate | std::ios::binary);
+
+	if (!file.is_open())
+	{
+		return false;
+	}
+
+	size_t fileSize = (size_t)file.tellg();
+	std::vector<uint32_t> buffer(fileSize / sizeof(uint32_t));
+	file.seekg(0);
+	file.read((char*)buffer.data(), fileSize);
+	file.close();
+
+	VkShaderModuleCreateInfo createInfo = {};
+	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	createInfo.pNext = nullptr;
+	createInfo.codeSize = buffer.size() * sizeof(uint32_t);
+	createInfo.pCode = buffer.data();
+
+	VkShaderModule shaderModule;
+	if (vkCreateShaderModule(_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+	{
+		return false;
+	}
+	*outShaderModule = shaderModule;
+	return true;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+///PipelineBuilder
+//////////////////////////////////////////////////////////////////////////////
+VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)
+{
+	VkPipelineViewportStateCreateInfo viewportState = {};
+	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewportState.pNext = nullptr;
+	viewportState.viewportCount = 1;
+	viewportState.pViewports = &_viewport;
+	viewportState.scissorCount = 1;
+	viewportState.pScissors = &_scissor;
+
+	VkPipelineColorBlendStateCreateInfo colorBlending = {};
+	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	colorBlending.pNext = nullptr;
+	colorBlending.logicOpEnable = VK_FALSE;
+	colorBlending.logicOp = VK_LOGIC_OP_COPY;
+	colorBlending.attachmentCount = 1;
+	colorBlending.pAttachments = &_colorBlendAttachment;
+
+	VkGraphicsPipelineCreateInfo pipelineInfo = {};
+	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipelineInfo.pNext = nullptr;
+	pipelineInfo.stageCount = static_cast<uint32_t>(_shaderStages.size());
+	pipelineInfo.pStages = _shaderStages.data();
+	pipelineInfo.pVertexInputState = &_vertexInputInfo;
+	pipelineInfo.pInputAssemblyState = &_inputAssembly;
+	pipelineInfo.pViewportState = &viewportState;
+	pipelineInfo.pRasterizationState = &_rasterizer;
+	pipelineInfo.pMultisampleState = &_multisampling;
+	pipelineInfo.pColorBlendState = &colorBlending;
+	pipelineInfo.layout = _pipelineLayout;
+	pipelineInfo.renderPass = pass;
+	pipelineInfo.subpass = 0;
+	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+
+	VkPipeline newPipeline;
+	if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &newPipeline) != VK_SUCCESS)
+	{
+		std::cout << "failed to create pipline\n";
+		return VK_NULL_HANDLE;
+	}
+	else
+	{
+		return newPipeline;
+	}
 }
