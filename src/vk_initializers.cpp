@@ -88,6 +88,17 @@ namespace Quest
 		return setbind;
 	}
 
+	VkDescriptorSetLayoutCreateInfo descriptorset_layout_create_info(const VkDescriptorSetLayoutBinding binding)
+	{
+		VkDescriptorSetLayoutCreateInfo setInfo = {};
+		setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		setInfo.pNext = nullptr;
+		setInfo.bindingCount = 1;
+		setInfo.flags = 0;
+		setInfo.pBindings = &binding;
+		return setInfo;
+	}
+
 	VkDeviceQueueCreateInfo device_queue_create_info(uint32_t queueFamilyIndex, uint32_t queueCount /*= 1*/)
 	{
 		static const float queuePriority(0.0f);

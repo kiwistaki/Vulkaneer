@@ -11,6 +11,7 @@ namespace Quest
 	VkCommandPoolCreateInfo command_pool_create_info(uint32_t queueFamilyIndex, VkCommandPoolResetFlags flags = 0);
 	VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info(bool bDepthTest, bool bDepthWrite, VkCompareOp compareOp);
 	VkDescriptorSetLayoutBinding descriptorset_layout_binding(VkDescriptorType type, VkShaderStageFlags stageFlags, uint32_t binding);
+	VkDescriptorSetLayoutCreateInfo descriptorset_layout_create_info(const VkDescriptorSetLayoutBinding binding);
 	VkDeviceQueueCreateInfo device_queue_create_info(uint32_t queueFamilyIndex, uint32_t queueCount = 1);
 	VkFenceCreateInfo fence_create_info(VkFenceCreateFlags flags = 0);
 	VkFramebufferCreateInfo framebuffer_create_info(VkRenderPass renderPass, VkExtent2D extent);

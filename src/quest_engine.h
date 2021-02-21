@@ -26,6 +26,13 @@ struct MeshPushConstants
 	glm::mat4 render_matrix;
 };
 
+struct GPUCameraData
+{
+	glm::mat4 view;
+	glm::mat4 proj;
+	glm::mat4 viewproj;
+};
+
 struct DeletionQueue
 {
 	std::deque<std::function<void()>> deletors;
@@ -52,6 +59,9 @@ struct FrameData
 
 	VkCommandPool _commandPool;
 	VkCommandBuffer _mainCommandBuffer;
+
+	AllocatedBuffer cameraBuffer;
+	VkDescriptorSet globalDescriptor;
 };
 
 constexpr unsigned int FRAME_OVERLAP = 3;
@@ -79,6 +89,7 @@ private:
 	void init_default_renderpass();
 	void init_framebuffers();
 	void init_sync_structures();
+	void init_descriptors();
 	void init_pipelines();
 	void init_scene();
 
@@ -86,6 +97,8 @@ private:
 
 	void load_meshes();
 	void upload_mesh(Mesh& mesh);
+
+	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 
 public:
 	bool _isInitialized{ false };
@@ -116,6 +129,9 @@ public:
 
 	VkRenderPass _renderPass;
 	std::vector<VkFramebuffer> _framebuffers;
+
+	VkDescriptorSetLayout _globalSetLayout;
+	VkDescriptorPool _descriptorPool;
 
 	FrameData _frames[FRAME_OVERLAP];
 

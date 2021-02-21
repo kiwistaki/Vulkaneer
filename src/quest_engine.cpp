@@ -46,6 +46,7 @@ void QuestEngine::init()
 	init_default_renderpass();
 	init_framebuffers();
 	init_sync_structures();
+	init_descriptors();
 	init_pipelines();
 
 	load_meshes();
@@ -343,6 +344,60 @@ void QuestEngine::init_sync_structures()
 	}
 }
 
+void QuestEngine::init_descriptors()
+{
+	std::vector<VkDescriptorPoolSize> sizes =
+	{
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10 }
+	};
+
+	VkDescriptorPoolCreateInfo pool_info = {};
+	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool_info.flags = 0;
+	pool_info.maxSets = 10;
+	pool_info.poolSizeCount = (uint32_t)sizes.size();
+	pool_info.pPoolSizes = sizes.data();
+	vkCreateDescriptorPool(_device, &pool_info, nullptr, &_descriptorPool);
+
+	VkDescriptorSetLayoutBinding camBufferBinding = Quest::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+	VkDescriptorSetLayoutCreateInfo setInfo = Quest::descriptorset_layout_create_info(camBufferBinding);
+	vkCreateDescriptorSetLayout(_device, &setInfo, nullptr, &_globalSetLayout);
+
+	for (int i = 0; i < FRAME_OVERLAP; i++)
+	{
+		_frames[i].cameraBuffer = create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+		VkDescriptorSetAllocateInfo allocInfo = {};
+		allocInfo.pNext = nullptr;
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.descriptorPool = _descriptorPool;
+		allocInfo.descriptorSetCount = 1;
+		allocInfo.pSetLayouts = &_globalSetLayout;
+		vkAllocateDescriptorSets(_device, &allocInfo, &_frames[i].globalDescriptor);
+
+		VkDescriptorBufferInfo binfo;
+		binfo.buffer = _frames[i].cameraBuffer._buffer;
+		binfo.offset = 0;
+		binfo.range = sizeof(GPUCameraData);
+
+		VkWriteDescriptorSet setWrite = {};
+		setWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		setWrite.pNext = nullptr;
+		setWrite.dstBinding = 0;
+		setWrite.dstSet = _frames[i].globalDescriptor;
+		setWrite.descriptorCount = 1;
+		setWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		setWrite.pBufferInfo = &binfo;
+		vkUpdateDescriptorSets(_device, 1, &setWrite, 0, nullptr);
+	}
+
+	_mainDeletionQueue.push_function([=]()
+	{
+		vkDestroyDescriptorSetLayout(_device, _globalSetLayout, nullptr);
+		vkDestroyDescriptorPool(_device, _descriptorPool, nullptr);
+	});
+}
+
 void QuestEngine::init_pipelines()
 {
 	VkShaderModule meshVertShader;
@@ -366,6 +421,8 @@ void QuestEngine::init_pipelines()
 	VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = Quest::pipeline_layout_create_info();
 	mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
 	mesh_pipeline_layout_info.pushConstantRangeCount = 1;
+	mesh_pipeline_layout_info.setLayoutCount = 1;
+	mesh_pipeline_layout_info.pSetLayouts = &_globalSetLayout;
 	VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr, &meshPipelineLayout));
 
 	VertexInputDescription vertexDescription = Vertex::get_vertex_description();
@@ -539,6 +596,16 @@ void QuestEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int cou
 	glm::mat4 projection = glm::perspective(glm::radians(70.f), 1700.f / 900.f, 0.1f, 200.0f);
 	projection[1][1] *= -1;
 
+	GPUCameraData camData;
+	camData.proj = projection;
+	camData.view = view;
+	camData.viewproj = projection * view;
+
+	void* data;
+	vmaMapMemory(_allocator, get_current_frame().cameraBuffer._allocation, &data);
+	memcpy(data, &camData, sizeof(GPUCameraData));
+	vmaUnmapMemory(_allocator, get_current_frame().cameraBuffer._allocation);
+
 	Mesh* lastMesh = nullptr;
 	Material* lastMaterial = nullptr;
 	for (int i = 0; i < count; i++)
@@ -549,10 +616,11 @@ void QuestEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int cou
 		{
 			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipeline);
 			lastMaterial = object.material;
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &get_current_frame().globalDescriptor, 0, nullptr);
 		}
 
 		glm::mat4 model = object.transformMatrix;
-		glm::mat4 mesh_matrix = projection * view * model;
+		glm::mat4 mesh_matrix = model;
 
 		MeshPushConstants constants;
 		constants.render_matrix = mesh_matrix;
@@ -566,6 +634,30 @@ void QuestEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int cou
 		}
 		vkCmdDraw(cmd, static_cast<uint32_t>(object.mesh->_vertices.size()), 1, 0, 0);
 	}
+}
+
+AllocatedBuffer QuestEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)
+{
+	VkBufferCreateInfo bufferInfo = {};
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.pNext = nullptr;
+	bufferInfo.size = allocSize;
+	bufferInfo.usage = usage;
+
+	VmaAllocationCreateInfo vmaallocInfo = {};
+	vmaallocInfo.usage = memoryUsage;
+
+	AllocatedBuffer newBuffer;
+	VK_CHECK(vmaCreateBuffer(_allocator, &bufferInfo, &vmaallocInfo,
+		&newBuffer._buffer,
+		&newBuffer._allocation,
+		nullptr));
+
+	_mainDeletionQueue.push_function([=]()
+	{
+		vmaDestroyBuffer(_allocator, newBuffer._buffer, newBuffer._allocation);
+	});
+	return newBuffer;
 }
 
 //////////////////////////////////////////////////////////////////////////////
