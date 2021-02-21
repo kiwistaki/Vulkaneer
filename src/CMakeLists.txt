@@ -6,7 +6,7 @@ add_executable (QuestEngine ${ENGINE_FILES})
 set_property(TARGET QuestEngine PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:QuestEngine>")
 
 target_include_directories(QuestEngine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_compile_definitions(QuestEngine PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_LEFT_HANDED) 
+##target_compile_definitions(QuestEngine PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_LEFT_HANDED) 
 target_precompile_headers(QuestEngine PUBLIC "vk_types.h" "<unordered_map>" "<vector>" "<iostream>" "<fstream>" "<string>" )
 target_link_libraries(QuestEngine vkbootstrap vma glm tinyobjloader imgui stb_image spirv_reflect)
 target_link_libraries(QuestEngine Vulkan::Vulkan sdl2)

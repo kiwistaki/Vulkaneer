@@ -248,7 +248,7 @@ namespace Quest
 		info.rasterizerDiscardEnable = VK_FALSE;
 		info.polygonMode = polygonMode;
 		info.lineWidth = 1.0f;
-		info.cullMode = VK_CULL_MODE_BACK_BIT;
+		info.cullMode = VK_CULL_MODE_NONE;//VK_CULL_MODE_BACK_BIT;
 		info.frontFace = VK_FRONT_FACE_CLOCKWISE;
 		info.depthBiasEnable = VK_FALSE;
 		info.depthBiasConstantFactor = 0.0f;

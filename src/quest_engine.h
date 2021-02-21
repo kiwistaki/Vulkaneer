@@ -5,6 +5,13 @@
 #include <functional>
 #include <deque>
 
+#include <glm/glm.hpp>
+
+struct MeshPushConstants
+{
+	glm::vec4 data;
+	glm::mat4 render_matrix;
+};
 
 struct DeletionQueue
 {
