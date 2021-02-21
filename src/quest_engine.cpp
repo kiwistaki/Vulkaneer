@@ -49,6 +49,7 @@ void QuestEngine::init()
 	init_pipelines();
 
 	load_meshes();
+	init_scene();
 
 	//everything went fine
 	_isInitialized = true;
@@ -88,27 +89,16 @@ void QuestEngine::draw()
 
 	VkClearValue clearValue;
 	clearValue.color = { { 0.05f, 0.05f, 0.05f, 1.0f } };
+	VkClearValue depthClear;
+	depthClear.depthStencil.depth = 1.0f;
+	VkClearValue clearValues[] = { clearValue, depthClear };
 
 	VkRenderPassBeginInfo rpInfo = Quest::renderpass_begin_info(_renderPass, _windowExtent, _framebuffers[swapchainImageIndex]);
-	rpInfo.clearValueCount = 1;
-	rpInfo.pClearValues = &clearValue;
+	rpInfo.clearValueCount = 2;
+	rpInfo.pClearValues = &clearValues[0];
 	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 	{
-		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
-		VkDeviceSize offset = 0;
-		vkCmdBindVertexBuffers(cmd, 0, 1, &_triangleMesh._vertexBuffer._buffer, &offset);
-
-		glm::vec3 camPos = { 0.f,0.f,-2.f };
-		glm::mat4 view = glm::translate(glm::mat4(1.f), camPos);
-		glm::mat4 projection = glm::perspective(glm::radians(70.f), 1700.f / 900.f, 0.1f, 200.0f);
-		projection[1][1] *= -1;
-		glm::mat4 model = glm::rotate(glm::mat4{ 1.0f }, glm::radians(_frameNumber * 0.4f), glm::vec3(0, 1, 0));
-		glm::mat4 mesh_matrix = projection * view * model;
-
-		MeshPushConstants constants;
-		constants.render_matrix = mesh_matrix;
-		vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
-		vkCmdDraw(cmd, static_cast<uint32_t>(_triangleMesh._vertices.size()), 1, 0, 0);
+		draw_objects(cmd, _renderables.data(), static_cast<int>(_renderables.size()));
 	}
 	vkCmdEndRenderPass(cmd);
 	VK_CHECK(vkEndCommandBuffer(cmd));
@@ -217,6 +207,25 @@ void QuestEngine::init_swapchain()
 	{
 		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
 	});
+
+
+	VkExtent3D depthImageExtent = {_windowExtent.width, _windowExtent.height, 1};
+	_depthFormat = VK_FORMAT_D32_SFLOAT;
+	VkImageCreateInfo dimg_info = Quest::image_create_info(_depthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
+
+	VmaAllocationCreateInfo dimg_allocinfo = {};
+	dimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	dimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	vmaCreateImage(_allocator, &dimg_info, &dimg_allocinfo, &_depthImage._image, &_depthImage._allocation, nullptr);
+
+	VkImageViewCreateInfo dview_info = Quest::imageview_create_info(_depthFormat, _depthImage._image, VK_IMAGE_ASPECT_DEPTH_BIT);
+	VK_CHECK(vkCreateImageView(_device, &dview_info, nullptr, &_depthImageView));
+
+	_mainDeletionQueue.push_function([=]()
+	{
+		vkDestroyImageView(_device, _depthImageView, nullptr);
+		vmaDestroyImage(_allocator, _depthImage._image, _depthImage._allocation);
+	});
 }
 
 void QuestEngine::init_commands()
@@ -245,19 +254,37 @@ void QuestEngine::init_default_renderpass()
 	color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+	VkAttachmentDescription depth_attachment = {};
+	depth_attachment.flags = 0;
+	depth_attachment.format = _depthFormat;
+	depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
 	VkAttachmentReference color_attachment_ref = {};
 	color_attachment_ref.attachment = 0;
 	color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference depth_attachment_ref = {};
+	depth_attachment_ref.attachment = 1;
+	depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	VkSubpassDescription subpass = {};
 	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	subpass.colorAttachmentCount = 1;
 	subpass.pColorAttachments = &color_attachment_ref;
+	subpass.pDepthStencilAttachment = &depth_attachment_ref;
+
+	VkAttachmentDescription attachments[2] = { color_attachment, depth_attachment };
 
 	VkRenderPassCreateInfo render_pass_info = {};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	render_pass_info.attachmentCount = 1;
-	render_pass_info.pAttachments = &color_attachment;
+	render_pass_info.attachmentCount = 2;
+	render_pass_info.pAttachments = &attachments[0];
 	render_pass_info.subpassCount = 1;
 	render_pass_info.pSubpasses = &subpass;
 	VK_CHECK(vkCreateRenderPass(_device, &render_pass_info, nullptr, &_renderPass));
@@ -274,9 +301,14 @@ void QuestEngine::init_framebuffers()
 	const uint32_t swapchain_imagecount = static_cast<uint32_t>(_swapchainImages.size());
 	_framebuffers = std::vector<VkFramebuffer>(swapchain_imagecount);
 
-	for (uint32_t i = 0; i < swapchain_imagecount; i++) {
+	for (uint32_t i = 0; i < swapchain_imagecount; i++)
+	{
+		VkImageView attachments[2];
+		attachments[0] = _swapchainImageViews[i];
+		attachments[1] = _depthImageView;
 
-		fb_info.pAttachments = &_swapchainImageViews[i];
+		fb_info.attachmentCount = 2;
+		fb_info.pAttachments = attachments;
 		VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_framebuffers[i]));
 
 		_mainDeletionQueue.push_function([=]()
@@ -323,10 +355,11 @@ void QuestEngine::init_pipelines()
 	push_constant.size = sizeof(MeshPushConstants);
 	push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+	VkPipelineLayout meshPipelineLayout;
 	VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = Quest::pipeline_layout_create_info();
 	mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
 	mesh_pipeline_layout_info.pushConstantRangeCount = 1;
-	VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr, &_meshPipelineLayout));
+	VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr, &meshPipelineLayout));
 
 	VertexInputDescription vertexDescription = Vertex::get_vertex_description();
 
@@ -350,17 +383,45 @@ void QuestEngine::init_pipelines()
 	pipelineBuilder._rasterizer = Quest::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
 	pipelineBuilder._multisampling = Quest::multisampling_state_create_info();
 	pipelineBuilder._colorBlendAttachment = Quest::color_blend_attachment_state();
-	pipelineBuilder._pipelineLayout = _meshPipelineLayout;
-	_meshPipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+	pipelineBuilder._depthStencil = Quest::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
+	pipelineBuilder._pipelineLayout = meshPipelineLayout;
+
+	VkPipeline meshPipeline;
+	meshPipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+
+	create_material(meshPipeline, meshPipelineLayout, "defaultmesh");
 
 	vkDestroyShaderModule(_device, meshFragShader, nullptr);
 	vkDestroyShaderModule(_device, meshVertShader, nullptr);
 
 	_mainDeletionQueue.push_function([=]()
 	{
-		vkDestroyPipeline(_device, _meshPipeline, nullptr);
-		vkDestroyPipelineLayout(_device, _meshPipelineLayout, nullptr);
+		vkDestroyPipeline(_device, meshPipeline, nullptr);
+		vkDestroyPipelineLayout(_device, meshPipelineLayout, nullptr);
 	});
+}
+
+void QuestEngine::init_scene()
+{
+	RenderObject monkey;
+	monkey.mesh = get_mesh("monkey");
+	monkey.material = get_material("defaultmesh");
+	monkey.transformMatrix = glm::mat4{ 1.0f };
+	_renderables.push_back(monkey);
+
+	for (int x = -20; x <= 20; x++)
+	{
+		for (int y = -20; y <= 20; y++)
+		{
+			RenderObject tri;
+			tri.mesh = get_mesh("triangle");
+			tri.material = get_material("defaultmesh");
+			glm::mat4 translation = glm::translate(glm::mat4{ 1.0 }, glm::vec3(x, 0, y));
+			glm::mat4 scale = glm::scale(glm::mat4{ 1.0 }, glm::vec3(0.2, 0.2, 0.2));
+			tri.transformMatrix = translation * scale;
+			_renderables.push_back(tri);
+		}
+	}
 }
 
 bool QuestEngine::load_shader_module(const char* filePath, VkShaderModule* outShaderModule)
@@ -395,15 +456,21 @@ bool QuestEngine::load_shader_module(const char* filePath, VkShaderModule* outSh
 
 void QuestEngine::load_meshes()
 {
-	_triangleMesh._vertices.resize(3);
-	_triangleMesh._vertices[0].position = { 1.f, 1.f, 0.0f };
-	_triangleMesh._vertices[1].position = { -1.f, 1.f, 0.0f };
-	_triangleMesh._vertices[2].position = { 0.f,-1.f, 0.0f };
-	_triangleMesh._vertices[0].color = { 0.f, 1.f, 0.0f };
-	_triangleMesh._vertices[1].color = { 0.f, 1.f, 0.0f };
-	_triangleMesh._vertices[2].color = { 0.f, 1.f, 0.0f };
+	Mesh triangleMesh;
+	triangleMesh._vertices.resize(3);
+	triangleMesh._vertices[0].position = { 1.f, 1.f, 0.0f };
+	triangleMesh._vertices[1].position = { -1.f, 1.f, 0.0f };
+	triangleMesh._vertices[2].position = { 0.f,-1.f, 0.0f };
+	triangleMesh._vertices[0].color = { 0.f, 1.f, 0.0f };
+	triangleMesh._vertices[1].color = { 0.f, 1.f, 0.0f };
+	triangleMesh._vertices[2].color = { 0.f, 1.f, 0.0f };
+	upload_mesh(triangleMesh);
+	_meshes["triangle"] = triangleMesh;
 
-	upload_mesh(_triangleMesh);
+	Mesh monkeyMesh;
+	monkeyMesh.load_from_obj("../../assets/monkey_smooth.obj");
+	upload_mesh(monkeyMesh);
+	_meshes["monkey"] = monkeyMesh;
 }
 
 void QuestEngine::upload_mesh(Mesh& mesh)
@@ -429,6 +496,69 @@ void QuestEngine::upload_mesh(Mesh& mesh)
 	{
 		vmaDestroyBuffer(_allocator, mesh._vertexBuffer._buffer, mesh._vertexBuffer._allocation);
 	});
+}
+
+Material* QuestEngine::create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name)
+{
+	Material mat;
+	mat.pipeline = pipeline;
+	mat.pipelineLayout = layout;
+	_materials[name] = mat;
+	return &_materials[name];
+}
+
+Material* QuestEngine::get_material(const std::string& name)
+{
+	auto it = _materials.find(name);
+	if (it == _materials.end())
+		return nullptr;
+	else
+		return &(*it).second;
+}
+
+Mesh* QuestEngine::get_mesh(const std::string& name)
+{
+	auto it = _meshes.find(name);
+	if (it == _meshes.end())
+		return nullptr;
+	else
+		return &(*it).second;
+}
+
+void QuestEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int count)
+{
+	glm::vec3 camPos = { 0.f,-6.f,-10.f };
+	glm::mat4 view = glm::translate(glm::mat4(1.f), camPos);
+	glm::mat4 projection = glm::perspective(glm::radians(70.f), 1700.f / 900.f, 0.1f, 200.0f);
+	projection[1][1] *= -1;
+
+	Mesh* lastMesh = nullptr;
+	Material* lastMaterial = nullptr;
+	for (int i = 0; i < count; i++)
+	{
+		RenderObject& object = first[i];
+
+		if (object.material != lastMaterial)
+		{
+			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipeline);
+			lastMaterial = object.material;
+		}
+
+		glm::mat4 model = object.transformMatrix;
+		glm::mat4 mesh_matrix = projection * view * model;
+
+		MeshPushConstants constants;
+		constants.render_matrix = mesh_matrix;
+		vkCmdPushConstants(cmd, object.material->pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
+
+		if (object.mesh != lastMesh)
+		{
+			VkDeviceSize offset = 0;
+			vkCmdBindVertexBuffers(cmd, 0, 1, &object.mesh->_vertexBuffer._buffer, &offset);
+			lastMesh = object.mesh;
+		}
+		vkCmdDraw(cmd, static_cast<uint32_t>(object.mesh->_vertices.size()), 1, 0, 0);
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -463,6 +593,7 @@ VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)
 	pipelineInfo.pRasterizationState = &_rasterizer;
 	pipelineInfo.pMultisampleState = &_multisampling;
 	pipelineInfo.pColorBlendState = &colorBlending;
+	pipelineInfo.pDepthStencilState = &_depthStencil;
 	pipelineInfo.layout = _pipelineLayout;
 	pipelineInfo.renderPass = pass;
 	pipelineInfo.subpass = 0;
