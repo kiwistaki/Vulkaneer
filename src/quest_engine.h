@@ -1,5 +1,7 @@
 #pragma once
-#include <vk_types.h>
+#include "vk_types.h"
+#include "vk_mesh.h"
+
 #include <functional>
 #include <deque>
 
@@ -42,11 +44,15 @@ private:
 
 	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);
 
+	void load_meshes();
+	void upload_mesh(Mesh& mesh);
+
 public:
 	bool _isInitialized{ false };
 	int _frameNumber{ 0 };
 
 	DeletionQueue _mainDeletionQueue;
+	VmaAllocator _allocator;
 
 	VkExtent2D _windowExtent{ 1700 , 900 };
 	struct SDL_Window* _window{ nullptr };
@@ -73,8 +79,9 @@ public:
 	VkSemaphore _presentSemaphore, _renderSemaphore;
 	VkFence _renderFence;
 
-	VkPipelineLayout _trianglePipelineLayout;
-	VkPipeline _trianglePipeline;
+	VkPipelineLayout _meshPipelineLayout;
+	VkPipeline _meshPipeline;
+	Mesh _triangleMesh;
 };
 
 class PipelineBuilder

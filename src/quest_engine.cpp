@@ -2,6 +2,9 @@
 #include "vk_types.h"
 #include "vk_initializers.h"
 
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
+
 #include <VkBootstrap.h>
 
 #include <SDL.h>
@@ -45,6 +48,8 @@ void QuestEngine::init()
 	init_sync_structures();
 	init_pipelines();
 
+	load_meshes();
+
 	//everything went fine
 	_isInitialized = true;
 }
@@ -56,6 +61,8 @@ void QuestEngine::cleanup()
 		VK_CHECK(vkDeviceWaitIdle(_device));
 
 		_mainDeletionQueue.flush();
+
+		vmaDestroyAllocator(_allocator);
 
 		vkDestroyDevice(_device, nullptr);
 		vkDestroySurfaceKHR(_instance, _surface, nullptr);
@@ -87,8 +94,10 @@ void QuestEngine::draw()
 	rpInfo.pClearValues = &clearValue;
 	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 	{
-		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
-		vkCmdDraw(cmd, 3, 1, 0, 0);
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
+		VkDeviceSize offset = 0;
+		vkCmdBindVertexBuffers(cmd, 0, 1, &_triangleMesh._vertexBuffer._buffer, &offset);
+		vkCmdDraw(cmd, static_cast<uint32_t>(_triangleMesh._vertices.size()), 1, 0, 0);
 	}
 	vkCmdEndRenderPass(cmd);
 	VK_CHECK(vkEndCommandBuffer(cmd));
@@ -168,6 +177,12 @@ void QuestEngine::init_vulkan()
 	_chosenGPU = physicalDevice.physical_device;
 	_graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
 	_graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
+
+	VmaAllocatorCreateInfo allocatorInfo = {};
+	allocatorInfo.physicalDevice = _chosenGPU;
+	allocatorInfo.device = _device;
+	allocatorInfo.instance = _instance;
+	VK_CHECK(vmaCreateAllocator(&allocatorInfo, &_allocator));
 }
 
 void QuestEngine::init_swapchain()
@@ -280,25 +295,31 @@ void QuestEngine::init_sync_structures()
 
 void QuestEngine::init_pipelines()
 {
-	VkShaderModule triangleVertexShader;
-	VkShaderModule triangleFragShader;
-	if (!load_shader_module("../../shaders/triangle.vert.spv", &triangleVertexShader))
+	VkShaderModule meshVertShader;
+	VkShaderModule meshFragShader;
+	if (!load_shader_module("../../shaders/tri_mesh.vert.spv", &meshVertShader))
 		std::cout << "Error when building the triangle vertex shader module" << std::endl;
 	else
 		std::cout << "Triangle vertex shader succesfully loaded" << std::endl;
 	
-	if (!load_shader_module("../../shaders/triangle.frag.spv", &triangleFragShader))
+	if (!load_shader_module("../../shaders/tri_mesh.frag.spv", &meshFragShader))
 		std::cout << "Error when building the triangle fragment shader module" << std::endl;
 	else
 		std::cout << "Triangle fragment shader succesfully loaded" << std::endl;
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = Quest::pipeline_layout_create_info();
-	VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_trianglePipelineLayout));
+	VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_meshPipelineLayout));
+
+	VertexInputDescription vertexDescription = Vertex::get_vertex_description();
 
 	PipelineBuilder pipelineBuilder;
-	pipelineBuilder._shaderStages.push_back(Quest::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, triangleVertexShader));
-	pipelineBuilder._shaderStages.push_back(Quest::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, triangleFragShader));
+	pipelineBuilder._shaderStages.push_back(Quest::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
+	pipelineBuilder._shaderStages.push_back(Quest::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, meshFragShader));
 	pipelineBuilder._vertexInputInfo = Quest::vertex_input_state_create_info();
+	pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
+	pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
+	pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
+	pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
 	pipelineBuilder._inputAssembly = Quest::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 	pipelineBuilder._viewport.x = 0.0f;
 	pipelineBuilder._viewport.y = 0.0f;
@@ -311,15 +332,16 @@ void QuestEngine::init_pipelines()
 	pipelineBuilder._rasterizer = Quest::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
 	pipelineBuilder._multisampling = Quest::multisampling_state_create_info();
 	pipelineBuilder._colorBlendAttachment = Quest::color_blend_attachment_state();
-	pipelineBuilder._pipelineLayout = _trianglePipelineLayout;
-	_trianglePipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+	pipelineBuilder._pipelineLayout = _meshPipelineLayout;
+	_meshPipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+
+	vkDestroyShaderModule(_device, meshFragShader, nullptr);
+	vkDestroyShaderModule(_device, meshVertShader, nullptr);
 
 	_mainDeletionQueue.push_function([=]()
 	{
-		vkDestroyPipeline(_device, _trianglePipeline, nullptr);
-		vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
-		vkDestroyShaderModule(_device, triangleFragShader, nullptr);
-		vkDestroyShaderModule(_device, triangleVertexShader, nullptr);
+		vkDestroyPipeline(_device, _meshPipeline, nullptr);
+		vkDestroyPipelineLayout(_device, _meshPipelineLayout, nullptr);
 	});
 }
 
@@ -351,6 +373,44 @@ bool QuestEngine::load_shader_module(const char* filePath, VkShaderModule* outSh
 	}
 	*outShaderModule = shaderModule;
 	return true;
+}
+
+void QuestEngine::load_meshes()
+{
+	_triangleMesh._vertices.resize(3);
+	_triangleMesh._vertices[0].position = { 1.f, 1.f, 0.0f };
+	_triangleMesh._vertices[1].position = { -1.f, 1.f, 0.0f };
+	_triangleMesh._vertices[2].position = { 0.f,-1.f, 0.0f };
+	_triangleMesh._vertices[0].color = { 0.f, 1.f, 0.0f };
+	_triangleMesh._vertices[1].color = { 0.f, 1.f, 0.0f };
+	_triangleMesh._vertices[2].color = { 0.f, 1.f, 0.0f };
+
+	upload_mesh(_triangleMesh);
+}
+
+void QuestEngine::upload_mesh(Mesh& mesh)
+{
+	VkBufferCreateInfo bufferInfo = {};
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.size = mesh._vertices.size() * sizeof(Vertex);
+	bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+
+	VmaAllocationCreateInfo vmaallocInfo = {};
+	vmaallocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+	VK_CHECK(vmaCreateBuffer(_allocator, &bufferInfo, &vmaallocInfo,
+		&mesh._vertexBuffer._buffer,
+		&mesh._vertexBuffer._allocation,
+		nullptr));
+
+	void* data;
+	vmaMapMemory(_allocator, mesh._vertexBuffer._allocation, &data);
+	memcpy(data, mesh._vertices.data(), mesh._vertices.size() * sizeof(Vertex));
+	vmaUnmapMemory(_allocator, mesh._vertexBuffer._allocation);
+
+	_mainDeletionQueue.push_function([=]()
+	{
+		vmaDestroyBuffer(_allocator, mesh._vertexBuffer._buffer, mesh._vertexBuffer._allocation);
+	});
 }
 
 //////////////////////////////////////////////////////////////////////////////
