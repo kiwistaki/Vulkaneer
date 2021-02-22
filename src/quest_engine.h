@@ -26,11 +26,51 @@ struct MeshPushConstants
 	glm::mat4 render_matrix;
 };
 
+struct GPUObjectData
+{
+	glm::mat4 modelMatrix;
+};
+
+struct GPUSceneData
+{
+	glm::vec4 fogColor; // w is for exponent
+	glm::vec4 fogDistances; //x for min, y for max, zw unused.
+	glm::vec4 ambientColor;
+	glm::vec4 sunlightDirection; //w for sun power
+	glm::vec4 sunlightColor;
+};
+
 struct GPUCameraData
 {
 	glm::mat4 view;
 	glm::mat4 proj;
 	glm::mat4 viewproj;
+};
+
+struct UploadContext
+{
+	VkFence _uploadFence;
+	VkCommandPool _commandPool;
+};
+
+struct FrameData
+{
+	VkSemaphore _presentSemaphore, _renderSemaphore;
+	VkFence _renderFence;
+
+	VkCommandPool _commandPool;
+	VkCommandBuffer _mainCommandBuffer;
+
+	AllocatedBuffer cameraBuffer;
+	VkDescriptorSet globalDescriptor;
+	AllocatedBuffer objectBuffer;
+	VkDescriptorSet objectDescriptor;
+};
+
+struct Texture
+{
+	AllocatedImage image;
+	VkImageView imageView;
 };
 
 struct DeletionQueue
@@ -52,18 +92,6 @@ struct DeletionQueue
 	}
 };
 
-struct FrameData
-{
-	VkSemaphore _presentSemaphore, _renderSemaphore;
-	VkFence _renderFence;
-
-	VkCommandPool _commandPool;
-	VkCommandBuffer _mainCommandBuffer;
-
-	AllocatedBuffer cameraBuffer;
-	VkDescriptorSet globalDescriptor;
-};
-
 constexpr unsigned int FRAME_OVERLAP = 3;
 
 class QuestEngine
@@ -81,6 +109,8 @@ public:
 	void draw_objects(VkCommandBuffer cmd, RenderObject* first, int count);
 
 	FrameData& get_current_frame() { return _frames[_frameNumber % FRAME_OVERLAP]; }
+	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
 
 private:
 	void init_vulkan();
@@ -95,10 +125,11 @@ private:
 
 	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);
 
+	void load_images();
 	void load_meshes();
 	void upload_mesh(Mesh& mesh);
 
-	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	size_t pad_uniform_buffer_size(size_t originalSize);
 
 public:
 	bool _isInitialized{ false };
@@ -113,6 +144,7 @@ public:
 	VkInstance _instance;
 	VkDebugUtilsMessengerEXT _debug_messenger;
 	VkPhysicalDevice _chosenGPU;
+	VkPhysicalDeviceProperties _gpuProperties;
 	VkDevice _device;
 	VkSurfaceKHR _surface;
 
@@ -131,13 +163,19 @@ public:
 	std::vector<VkFramebuffer> _framebuffers;
 
 	VkDescriptorSetLayout _globalSetLayout;
+	VkDescriptorSetLayout _objectSetLayout;
 	VkDescriptorPool _descriptorPool;
 
 	FrameData _frames[FRAME_OVERLAP];
+	UploadContext _uploadContext;
+
+	GPUSceneData _sceneParameters;
+	AllocatedBuffer _sceneParameterBuffer;
 
 	std::vector<RenderObject> _renderables;
-	std::unordered_map<std::string, Material> _materials;
 	std::unordered_map<std::string, Mesh> _meshes;
+	std::unordered_map<std::string, Material> _materials;
+	std::unordered_map<std::string, Texture> _loadedTextures;
 };
 
 class PipelineBuilder
