@@ -50,6 +50,7 @@ void QuestEngine::init()
 	init_descriptors();
 	init_pipelines();
 
+	load_images();
 	load_meshes();
 	init_scene();
 
@@ -367,7 +368,8 @@ void QuestEngine::init_descriptors()
 	{
 		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10 },
 		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 10 },
-		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10 }
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10 },
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10 }
 	};
 
 	VkDescriptorPoolCreateInfo pool_info = {};
@@ -398,6 +400,15 @@ void QuestEngine::init_descriptors()
 	set2info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	set2info.pBindings = &objectBind;
 	vkCreateDescriptorSetLayout(_device, &set2info, nullptr, &_objectSetLayout);
+
+	VkDescriptorSetLayoutBinding textureBind = Quest::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+	VkDescriptorSetLayoutCreateInfo set3info = {};
+	set3info.bindingCount = 1;
+	set3info.flags = 0;
+	set3info.pNext = nullptr;
+	set3info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	set3info.pBindings = &textureBind;
+	vkCreateDescriptorSetLayout(_device, &set3info, nullptr, &_singleTextureSetLayout);
 
 	const size_t sceneParamBufferSize = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUSceneData));
 	_sceneParameterBuffer = create_buffer(sceneParamBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -450,6 +461,7 @@ void QuestEngine::init_descriptors()
 	_mainDeletionQueue.push_function([=]()
 	{
 		vmaDestroyBuffer(_allocator, _sceneParameterBuffer._buffer, _sceneParameterBuffer._allocation);
+		vkDestroyDescriptorSetLayout(_device, _singleTextureSetLayout, nullptr);
 		vkDestroyDescriptorSetLayout(_device, _objectSetLayout, nullptr);
 		vkDestroyDescriptorSetLayout(_device, _globalSetLayout, nullptr);
 		vkDestroyDescriptorPool(_device, _descriptorPool, nullptr);
@@ -476,17 +488,17 @@ void QuestEngine::init_pipelines()
 	else
 		std::cout << "Triangle fragment shader succesfully loaded" << std::endl;
 
-	VkPushConstantRange push_constant;
-	push_constant.offset = 0;
-	push_constant.size = sizeof(MeshPushConstants);
-	push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	//VkPushConstantRange push_constant;
+	//push_constant.offset = 0;
+	//push_constant.size = sizeof(MeshPushConstants);
+	//push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
 	VkPipelineLayout meshPipelineLayout;
-	VkDescriptorSetLayout setLayouts[] = { _globalSetLayout, _objectSetLayout };
+	VkDescriptorSetLayout setLayouts[] = { _globalSetLayout, _objectSetLayout, _singleTextureSetLayout };
 	VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = Quest::pipeline_layout_create_info();
-	mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
-	mesh_pipeline_layout_info.pushConstantRangeCount = 1;
-	mesh_pipeline_layout_info.setLayoutCount = 2;
+	//mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
+	//mesh_pipeline_layout_info.pushConstantRangeCount = 1;
+	mesh_pipeline_layout_info.setLayoutCount = 3;
 	mesh_pipeline_layout_info.pSetLayouts = setLayouts;
 	VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr, &meshPipelineLayout));
 
@@ -532,7 +544,7 @@ void QuestEngine::init_pipelines()
 
 void QuestEngine::init_scene()
 {
-	RenderObject monkey;
+	/*RenderObject monkey;
 	monkey.mesh = get_mesh("monkey");
 	monkey.material = get_material("defaultmesh");
 	monkey.transformMatrix = glm::mat4{ 1.0f };
@@ -550,7 +562,38 @@ void QuestEngine::init_scene()
 			tri.transformMatrix = translation * scale;
 			_renderables.push_back(tri);
 		}
-	}
+	}*/
+
+	RenderObject map;
+	map.mesh = get_mesh("empire");
+	map.material = get_material("defaultmesh");
+	map.transformMatrix = glm::translate(glm::vec3{ 5,-10,0 });
+	_renderables.push_back(map);
+
+	VkSamplerCreateInfo samplerInfo = Quest::sampler_create_info(VK_FILTER_NEAREST);
+	VkSampler blockySampler;
+	vkCreateSampler(_device, &samplerInfo, nullptr, &blockySampler);
+
+	Material* texturedMat = get_material("defaultmesh");
+	VkDescriptorSetAllocateInfo allocInfo = {};
+	allocInfo.pNext = nullptr;
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = _descriptorPool;
+	allocInfo.descriptorSetCount = 1;
+	allocInfo.pSetLayouts = &_singleTextureSetLayout;
+	vkAllocateDescriptorSets(_device, &allocInfo, &texturedMat->textureSet);
+
+	VkDescriptorImageInfo imageBufferInfo;
+	imageBufferInfo.sampler = blockySampler;
+	imageBufferInfo.imageView = _loadedTextures["empire_diffuse"].imageView;
+	imageBufferInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	VkWriteDescriptorSet texture1 = Quest::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texturedMat->textureSet, &imageBufferInfo, 0);
+	vkUpdateDescriptorSets(_device, 1, &texture1, 0, nullptr);
+
+	_mainDeletionQueue.push_function([=]()
+	{
+		vkDestroySampler(_device, blockySampler, nullptr);
+	});
 }
 
 bool QuestEngine::load_shader_module(const char* filePath, VkShaderModule* outShaderModule)
@@ -590,6 +633,11 @@ void QuestEngine::load_images()
 	VkImageViewCreateInfo imageinfo = Quest::imageview_create_info(VK_FORMAT_R8G8B8A8_SRGB, lostEmpire.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	vkCreateImageView(_device, &imageinfo, nullptr, &lostEmpire.imageView);
 	_loadedTextures["empire_diffuse"] = lostEmpire;
+
+	_mainDeletionQueue.push_function([=]()
+	{
+		vkDestroyImageView(_device, lostEmpire.imageView, nullptr);
+	});
 }
 
 void QuestEngine::load_meshes()
@@ -609,6 +657,11 @@ void QuestEngine::load_meshes()
 	monkeyMesh.load_from_obj("../../assets/monkey_smooth.obj");
 	upload_mesh(monkeyMesh);
 	_meshes["monkey"] = monkeyMesh;
+
+	Mesh lostEmpire{};
+	lostEmpire.load_from_obj("../../assets/lost_empire.obj");
+	upload_mesh(lostEmpire);
+	_meshes["empire"] = lostEmpire;
 }
 
 void QuestEngine::upload_mesh(Mesh& mesh)
@@ -739,14 +792,15 @@ void QuestEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int cou
 			uint32_t uniform_offset = static_cast<uint32_t>(pad_uniform_buffer_size(sizeof(GPUSceneData)) * frameIndex);
 			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &get_current_frame().globalDescriptor, 1, &uniform_offset);
 			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &get_current_frame().objectDescriptor, 0, nullptr);
+
+			if (object.material->textureSet != VK_NULL_HANDLE)
+			{
+				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 2, 1, &object.material->textureSet, 0, nullptr);
+			}
 		}
 
 		glm::mat4 model = object.transformMatrix;
 		glm::mat4 mesh_matrix = model;
-
-		MeshPushConstants constants;
-		constants.render_matrix = mesh_matrix;
-		vkCmdPushConstants(cmd, object.material->pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
 
 		if (object.mesh != lastMesh)
 		{
