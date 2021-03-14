@@ -1,8 +1,8 @@
 #pragma once
 #include "vk_types.h"
-#include "quest_engine.h"
+#include "vulkaneer.h"
 
 namespace Quest
 {
-	bool load_image_from_file(QuestEngine& engine, const char* file, AllocatedImage& outImage);
+	bool load_image_from_file(Vulkaneer& engine, const char* file, AllocatedImage& outImage);
 }

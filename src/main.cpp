@@ -1,8 +1,8 @@
-#include "quest_engine.h"
+#include "vulkaneer.h"
 
 int main(int argc, char** argv)
 {
-	QuestEngine engine;
+	Vulkaneer engine;
 	engine.init();
 	engine.run();
 	engine.cleanup();

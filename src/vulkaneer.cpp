@@ -1,4 +1,4 @@
-#include "quest_engine.h"
+#include "vulkaneer.h"
 #include "vk_types.h"
 #include "vk_initializers.h"
 #include "vk_textures.h"
@@ -27,7 +27,7 @@ using namespace std;
 
 
 
-void QuestEngine::init()
+void Vulkaneer::init()
 {
 	// initialize SDL
 	SDL_Init(SDL_INIT_VIDEO);
@@ -58,7 +58,7 @@ void QuestEngine::init()
 	_isInitialized = true;
 }
 
-void QuestEngine::cleanup()
+void Vulkaneer::cleanup()
 {
 	if (_isInitialized)
 	{
@@ -77,7 +77,7 @@ void QuestEngine::cleanup()
 	}
 }
 
-void QuestEngine::draw()
+void Vulkaneer::draw()
 {
 	VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
 	VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence));
@@ -128,7 +128,7 @@ void QuestEngine::draw()
 	_frameNumber++;
 }
 
-void QuestEngine::run()
+void Vulkaneer::run()
 {
 	SDL_Event e;
 	bool bQuit = false;
@@ -144,7 +144,7 @@ void QuestEngine::run()
 	}
 }
 
-void QuestEngine::init_vulkan()
+void Vulkaneer::init_vulkan()
 {
 	vkb::InstanceBuilder builder;
 	auto inst_ret = builder.set_app_name("Quest Application")
@@ -192,7 +192,7 @@ void QuestEngine::init_vulkan()
 	VK_CHECK(vmaCreateAllocator(&allocatorInfo, &_allocator));
 }
 
-void QuestEngine::init_swapchain()
+void Vulkaneer::init_swapchain()
 {
 	vkb::SwapchainBuilder swapchainBuilder{ _chosenGPU,_device,_surface };
 	VkSurfaceFormatKHR desiredSurfaceFormat = { VK_FORMAT_B8G8R8A8_UNORM, VK_COLORSPACE_SRGB_NONLINEAR_KHR };
@@ -234,7 +234,7 @@ void QuestEngine::init_swapchain()
 	});
 }
 
-void QuestEngine::init_commands()
+void Vulkaneer::init_commands()
 {
 	VkCommandPoolCreateInfo commandPoolInfo = Quest::command_pool_create_info(_graphicsQueueFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
@@ -258,7 +258,7 @@ void QuestEngine::init_commands()
 	});
 }
 
-void QuestEngine::init_default_renderpass()
+void Vulkaneer::init_default_renderpass()
 {
 	VkAttachmentDescription color_attachment = {};
 	color_attachment.format = _swapchainImageFormat;
@@ -311,7 +311,7 @@ void QuestEngine::init_default_renderpass()
 	});
 }
 
-void QuestEngine::init_framebuffers()
+void Vulkaneer::init_framebuffers()
 {
 	VkFramebufferCreateInfo fb_info = Quest::framebuffer_create_info(_renderPass, { _windowExtent.width, _windowExtent.height });
 	const uint32_t swapchain_imagecount = static_cast<uint32_t>(_swapchainImages.size());
@@ -335,7 +335,7 @@ void QuestEngine::init_framebuffers()
 	}
 }
 
-void QuestEngine::init_sync_structures()
+void Vulkaneer::init_sync_structures()
 {
 	VkFenceCreateInfo fenceCreateInfo = Quest::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
 	VkSemaphoreCreateInfo semaphoreCreateInfo = Quest::semaphore_create_info();
@@ -362,7 +362,7 @@ void QuestEngine::init_sync_structures()
 
 }
 
-void QuestEngine::init_descriptors()
+void Vulkaneer::init_descriptors()
 {
 	std::vector<VkDescriptorPoolSize> sizes =
 	{
@@ -474,7 +474,7 @@ void QuestEngine::init_descriptors()
 	});
 }
 
-void QuestEngine::init_pipelines()
+void Vulkaneer::init_pipelines()
 {
 	VkShaderModule meshVertShader;
 	VkShaderModule meshFragShader;
@@ -542,7 +542,7 @@ void QuestEngine::init_pipelines()
 	});
 }
 
-void QuestEngine::init_scene()
+void Vulkaneer::init_scene()
 {
 	/*RenderObject monkey;
 	monkey.mesh = get_mesh("monkey");
@@ -596,7 +596,7 @@ void QuestEngine::init_scene()
 	});
 }
 
-bool QuestEngine::load_shader_module(const char* filePath, VkShaderModule* outShaderModule)
+bool Vulkaneer::load_shader_module(const char* filePath, VkShaderModule* outShaderModule)
 {
 	std::ifstream file(filePath, std::ios::ate | std::ios::binary);
 
@@ -626,7 +626,7 @@ bool QuestEngine::load_shader_module(const char* filePath, VkShaderModule* outSh
 	return true;
 }
 
-void QuestEngine::load_images()
+void Vulkaneer::load_images()
 {
 	Texture lostEmpire;
 	Quest::load_image_from_file(*this, "../../assets/lost_empire-RGBA.png", lostEmpire.image);
@@ -640,7 +640,7 @@ void QuestEngine::load_images()
 	});
 }
 
-void QuestEngine::load_meshes()
+void Vulkaneer::load_meshes()
 {
 	Mesh triangleMesh;
 	triangleMesh._vertices.resize(3);
@@ -664,7 +664,7 @@ void QuestEngine::load_meshes()
 	_meshes["empire"] = lostEmpire;
 }
 
-void QuestEngine::upload_mesh(Mesh& mesh)
+void Vulkaneer::upload_mesh(Mesh& mesh)
 {
 	const size_t bufferSize = mesh._vertices.size() * sizeof(Vertex);
 
@@ -715,7 +715,7 @@ void QuestEngine::upload_mesh(Mesh& mesh)
 	vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
 }
 
-Material* QuestEngine::create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name)
+Material* Vulkaneer::create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name)
 {
 	Material mat;
 	mat.pipeline = pipeline;
@@ -724,7 +724,7 @@ Material* QuestEngine::create_material(VkPipeline pipeline, VkPipelineLayout lay
 	return &_materials[name];
 }
 
-Material* QuestEngine::get_material(const std::string& name)
+Material* Vulkaneer::get_material(const std::string& name)
 {
 	auto it = _materials.find(name);
 	if (it == _materials.end())
@@ -733,7 +733,7 @@ Material* QuestEngine::get_material(const std::string& name)
 		return &(*it).second;
 }
 
-Mesh* QuestEngine::get_mesh(const std::string& name)
+Mesh* Vulkaneer::get_mesh(const std::string& name)
 {
 	auto it = _meshes.find(name);
 	if (it == _meshes.end())
@@ -742,7 +742,7 @@ Mesh* QuestEngine::get_mesh(const std::string& name)
 		return &(*it).second;
 }
 
-void QuestEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int count)
+void Vulkaneer::draw_objects(VkCommandBuffer cmd, RenderObject* first, int count)
 {
 	glm::vec3 camPos = { 0.f,-6.f,-10.f };
 	glm::mat4 view = glm::translate(glm::mat4(1.f), camPos);
@@ -812,7 +812,7 @@ void QuestEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int cou
 	}
 }
 
-AllocatedBuffer QuestEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)
+AllocatedBuffer Vulkaneer::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)
 {
 	VkBufferCreateInfo bufferInfo = {};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -832,7 +832,7 @@ AllocatedBuffer QuestEngine::create_buffer(size_t allocSize, VkBufferUsageFlags 
 	return newBuffer;
 }
 
-size_t QuestEngine::pad_uniform_buffer_size(size_t originalSize)
+size_t Vulkaneer::pad_uniform_buffer_size(size_t originalSize)
 {
 	size_t minUboAlignment = _gpuProperties.limits.minUniformBufferOffsetAlignment;
 	size_t alignedSize = originalSize;
@@ -841,7 +841,7 @@ size_t QuestEngine::pad_uniform_buffer_size(size_t originalSize)
 	return alignedSize;
 }
 
-void QuestEngine::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function)
+void Vulkaneer::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function)
 {
 	VkCommandBufferAllocateInfo cmdAllocInfo = Quest::command_buffer_allocate_info(_uploadContext._commandPool, 1);
 	VkCommandBuffer cmd;

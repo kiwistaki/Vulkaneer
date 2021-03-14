@@ -95,7 +95,7 @@ struct DeletionQueue
 
 constexpr unsigned int FRAME_OVERLAP = 3;
 
-class QuestEngine
+class Vulkaneer
 {
 public:
 	void init();

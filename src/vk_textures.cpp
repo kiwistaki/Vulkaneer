@@ -5,7 +5,7 @@
 #include <stb_image.h>
 #include <iostream>
 
-bool Quest::load_image_from_file(QuestEngine& engine, const char* file, AllocatedImage& outImage)
+bool Quest::load_image_from_file(Vulkaneer& engine, const char* file, AllocatedImage& outImage)
 {
 	int texWidth, texHeight, texChannels;
 	stbi_uc* pixels = stbi_load(file, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);

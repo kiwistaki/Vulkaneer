@@ -18,7 +18,7 @@ namespace Quest
 	uint32_t hash_descriptor_layout_info(VkDescriptorSetLayoutCreateInfo* info);
 }
 
-class QuestEngine;
+class Vulkaneer;
 
 //holds all information for a given shader set for pipeline
 struct ShaderEffect
