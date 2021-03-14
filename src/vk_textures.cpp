@@ -5,7 +5,7 @@
 #include <stb_image.h>
 #include <iostream>
 
-bool Quest::load_image_from_file(Vulkaneer& engine, const char* file, AllocatedImage& outImage)
+bool vkn::load_image_from_file(Vulkaneer& engine, const char* file, AllocatedImage& outImage)
 {
 	int texWidth, texHeight, texChannels;
 	stbi_uc* pixels = stbi_load(file, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
@@ -33,7 +33,7 @@ bool Quest::load_image_from_file(Vulkaneer& engine, const char* file, AllocatedI
 	imageExtent.depth = 1;
 
 	AllocatedImage newImage;
-	VkImageCreateInfo dimg_info = Quest::image_create_info(image_format, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, imageExtent);
+	VkImageCreateInfo dimg_info = vkn::image_create_info(image_format, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, imageExtent);
 	VmaAllocationCreateInfo dimg_allocinfo = {};
 	dimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 	vmaCreateImage(engine._allocator, &dimg_info, &dimg_allocinfo, &newImage._image, &newImage._allocation, nullptr);

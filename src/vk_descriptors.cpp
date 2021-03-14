@@ -1,7 +1,7 @@
 ﻿#include "vk_descriptors.h"
 #include <algorithm>
 
-namespace Quest
+namespace vkn
 {
 	VkDescriptorPool createPool(VkDevice device, const DescriptorAllocator::PoolSizes& poolSizes, int count, VkDescriptorPoolCreateFlags flags)
 	{
@@ -168,7 +168,7 @@ namespace Quest
 		}
 	}
 
-	Quest::DescriptorBuilder DescriptorBuilder::begin(DescriptorLayoutCache* layoutCache, DescriptorAllocator* allocator)
+	DescriptorBuilder DescriptorBuilder::begin(DescriptorLayoutCache* layoutCache, DescriptorAllocator* allocator)
 	{
 		DescriptorBuilder builder;
 		builder.cache = layoutCache;
@@ -177,7 +177,7 @@ namespace Quest
 	}
 
 
-	Quest::DescriptorBuilder& DescriptorBuilder::bind_buffer(uint32_t binding, VkDescriptorBufferInfo* bufferInfo, VkDescriptorType type, VkShaderStageFlags stageFlags)
+	DescriptorBuilder& DescriptorBuilder::bind_buffer(uint32_t binding, VkDescriptorBufferInfo* bufferInfo, VkDescriptorType type, VkShaderStageFlags stageFlags)
 	{
 		VkDescriptorSetLayoutBinding newBinding{};
 		newBinding.descriptorCount = 1;
@@ -199,7 +199,7 @@ namespace Quest
 	}
 
 
-	Quest::DescriptorBuilder& DescriptorBuilder::bind_image(uint32_t binding,  VkDescriptorImageInfo* imageInfo, VkDescriptorType type, VkShaderStageFlags stageFlags)
+	DescriptorBuilder& DescriptorBuilder::bind_image(uint32_t binding,  VkDescriptorImageInfo* imageInfo, VkDescriptorType type, VkShaderStageFlags stageFlags)
 	{
 		VkDescriptorSetLayoutBinding newBinding{};
 		newBinding.descriptorCount = 1;

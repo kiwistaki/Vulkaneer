@@ -12,7 +12,7 @@ struct ShaderModule
 	VkShaderModule module = VK_NULL_HANDLE;
 };
 
-namespace Quest
+namespace vkn
 {
 	bool load_shader_module(VkDevice device, const char* filePath, ShaderModule* outShaderModule);
 	uint32_t hash_descriptor_layout_info(VkDescriptorSetLayoutCreateInfo* info);
@@ -69,7 +69,7 @@ struct ShaderDescriptorBinder
 	void bind_buffer(const char* name, const VkDescriptorBufferInfo& bufferInfo);
 	void bind_dynamic_buffer(const char* name, uint32_t offset,const VkDescriptorBufferInfo& bufferInfo);
 	void apply_binds( VkCommandBuffer cmd);
-	void build_sets(VkDevice device, Quest::DescriptorAllocator& allocator);
+	void build_sets(VkDevice device, vkn::DescriptorAllocator& allocator);
 	void set_shader(ShaderEffect* newShader);
 
 	std::array<VkDescriptorSet, 4> cachedDescriptorSets;

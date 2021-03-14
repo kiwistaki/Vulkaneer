@@ -10,7 +10,7 @@
 #include <sstream>
 #include <vector>
 
-bool Quest::load_shader_module(VkDevice device,const char* filePath, ShaderModule* outShaderModule)
+bool vkn::load_shader_module(VkDevice device,const char* filePath, ShaderModule* outShaderModule)
 {
 	std::ifstream file(filePath, std::ios::ate | std::ios::binary);
 	if (!file.is_open())
@@ -42,7 +42,7 @@ constexpr uint32_t fnv1a_32(char const* s, std::size_t count)
 	return ((count ? fnv1a_32(s, count - 1) : 2166136261u) ^ s[count]) * 16777619u;
 }
 
-uint32_t Quest::hash_descriptor_layout_info(VkDescriptorSetLayoutCreateInfo* info)
+uint32_t vkn::hash_descriptor_layout_info(VkDescriptorSetLayoutCreateInfo* info)
 {
 	std::stringstream ss;
 	ss << info->flags;
@@ -189,7 +189,7 @@ void ShaderEffect::reflect_layout(VkDevice device, ReflectionOverrides* override
 
 		if (ly.create_info.bindingCount > 0)
 		{
-			setHashes[i] = Quest::hash_descriptor_layout_info(&ly.create_info);
+			setHashes[i] = vkn::hash_descriptor_layout_info(&ly.create_info);
 			vkCreateDescriptorSetLayout(device, &ly.create_info, nullptr, &setLayouts[i]);
 		}
 		else
@@ -210,7 +210,7 @@ void ShaderEffect::reflect_layout(VkDevice device, ReflectionOverrides* override
 		}
 	}
 
-	VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = Quest::pipeline_layout_create_info();
+	VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = vkn::pipeline_layout_create_info();
 	mesh_pipeline_layout_info.pPushConstantRanges = constant_ranges.data();
 	mesh_pipeline_layout_info.pushConstantRangeCount = (uint32_t)constant_ranges.size();
 	mesh_pipeline_layout_info.setLayoutCount = s;
@@ -222,7 +222,7 @@ void ShaderEffect::reflect_layout(VkDevice device, ReflectionOverrides* override
 void ShaderEffect::fill_stages(std::vector<VkPipelineShaderStageCreateInfo>& pipelineStages)
 {
 	for (auto& s : stages)
-		pipelineStages.push_back(Quest::pipeline_shader_stage_create_info(s.stage, s.shaderModule->module));
+		pipelineStages.push_back(vkn::pipeline_shader_stage_create_info(s.stage, s.shaderModule->module));
 }
 
 void ShaderDescriptorBinder::bind_buffer(const char* name, const VkDescriptorBufferInfo& bufferInfo)
@@ -281,7 +281,7 @@ void ShaderDescriptorBinder::apply_binds(VkCommandBuffer cmd)
 	}
 }
 
-void ShaderDescriptorBinder::build_sets(VkDevice device, Quest::DescriptorAllocator& allocator)
+void ShaderDescriptorBinder::build_sets(VkDevice device, vkn::DescriptorAllocator& allocator)
 {
 	std::array<std::vector<VkWriteDescriptorSet>, 4> writes{};
 
@@ -300,7 +300,7 @@ void ShaderDescriptorBinder::build_sets(VkDevice device, Quest::DescriptorAlloca
 	for (BufferWriteDescriptor& w : bufferWrites)
 	{
 		uint32_t set = w.dstSet;
-		VkWriteDescriptorSet write = Quest::write_descriptor_buffer(w.descriptorType, VK_NULL_HANDLE, &w.bufferInfo, w.dstBinding);
+		VkWriteDescriptorSet write = vkn::write_descriptor_buffer(w.descriptorType, VK_NULL_HANDLE, &w.bufferInfo, w.dstBinding);
 		writes[set].push_back(write);
 
 		//dynamic offsets
@@ -361,7 +361,7 @@ ShaderModule* ShaderCache::get_shader(const std::string& path)
 	if (it == module_cache.end())
 	{
 		ShaderModule newShader;
-		bool result = Quest::load_shader_module(_device, path.c_str(), &newShader);
+		bool result = vkn::load_shader_module(_device, path.c_str(), &newShader);
 		if (!result)
 		{
 			std::cout << "Error when compiling shader " << path << std::endl;

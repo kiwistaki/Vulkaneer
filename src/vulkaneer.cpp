@@ -33,7 +33,7 @@ void Vulkaneer::init()
 	SDL_Init(SDL_INIT_VIDEO);
 	SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
 	_window = SDL_CreateWindow(
-		"Quest Engine",
+		"Vulkaneer",
 		SDL_WINDOWPOS_UNDEFINED,
 		SDL_WINDOWPOS_UNDEFINED,
 		_windowExtent.width,
@@ -87,7 +87,7 @@ void Vulkaneer::draw()
 	VK_CHECK(vkResetCommandBuffer(get_current_frame()._mainCommandBuffer, 0));
 
 	VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
-	VkCommandBufferBeginInfo cmdBeginInfo = Quest::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+	VkCommandBufferBeginInfo cmdBeginInfo = vkn::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
 
 	VkClearValue clearValue;
@@ -96,7 +96,7 @@ void Vulkaneer::draw()
 	depthClear.depthStencil.depth = 1.0f;
 	VkClearValue clearValues[] = { clearValue, depthClear };
 
-	VkRenderPassBeginInfo rpInfo = Quest::renderpass_begin_info(_renderPass, _windowExtent, _framebuffers[swapchainImageIndex]);
+	VkRenderPassBeginInfo rpInfo = vkn::renderpass_begin_info(_renderPass, _windowExtent, _framebuffers[swapchainImageIndex]);
 	rpInfo.clearValueCount = 2;
 	rpInfo.pClearValues = &clearValues[0];
 	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -108,7 +108,7 @@ void Vulkaneer::draw()
 
 	//Submit
 	VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	VkSubmitInfo submit = Quest::submit_info(&cmd);
+	VkSubmitInfo submit = vkn::submit_info(&cmd);
 	submit.pWaitDstStageMask = &waitStage;
 	submit.waitSemaphoreCount = 1;
 	submit.pWaitSemaphores = &get_current_frame()._presentSemaphore;
@@ -117,7 +117,7 @@ void Vulkaneer::draw()
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit, get_current_frame()._renderFence));
 
 	//Present
-	VkPresentInfoKHR presentInfo = Quest::present_info();
+	VkPresentInfoKHR presentInfo = vkn::present_info();
 	presentInfo.pSwapchains = &_swapchain;
 	presentInfo.swapchainCount = 1;
 	presentInfo.pWaitSemaphores = &get_current_frame()._renderSemaphore;
@@ -147,7 +147,7 @@ void Vulkaneer::run()
 void Vulkaneer::init_vulkan()
 {
 	vkb::InstanceBuilder builder;
-	auto inst_ret = builder.set_app_name("Quest Application")
+	auto inst_ret = builder.set_app_name("Vulkaneer Application")
 		.request_validation_layers(true)
 		.require_api_version(1, 2, 0)
 		.use_default_debug_messenger()
@@ -217,14 +217,14 @@ void Vulkaneer::init_swapchain()
 
 	VkExtent3D depthImageExtent = {_windowExtent.width, _windowExtent.height, 1};
 	_depthFormat = VK_FORMAT_D32_SFLOAT;
-	VkImageCreateInfo dimg_info = Quest::image_create_info(_depthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
+	VkImageCreateInfo dimg_info = vkn::image_create_info(_depthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
 
 	VmaAllocationCreateInfo dimg_allocinfo = {};
 	dimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 	dimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	vmaCreateImage(_allocator, &dimg_info, &dimg_allocinfo, &_depthImage._image, &_depthImage._allocation, nullptr);
 
-	VkImageViewCreateInfo dview_info = Quest::imageview_create_info(_depthFormat, _depthImage._image, VK_IMAGE_ASPECT_DEPTH_BIT);
+	VkImageViewCreateInfo dview_info = vkn::imageview_create_info(_depthFormat, _depthImage._image, VK_IMAGE_ASPECT_DEPTH_BIT);
 	VK_CHECK(vkCreateImageView(_device, &dview_info, nullptr, &_depthImageView));
 
 	_mainDeletionQueue.push_function([=]()
@@ -236,13 +236,13 @@ void Vulkaneer::init_swapchain()
 
 void Vulkaneer::init_commands()
 {
-	VkCommandPoolCreateInfo commandPoolInfo = Quest::command_pool_create_info(_graphicsQueueFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+	VkCommandPoolCreateInfo commandPoolInfo = vkn::command_pool_create_info(_graphicsQueueFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
 	for (int i = 0; i < FRAME_OVERLAP; ++i)
 	{
 		VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_frames[i]._commandPool));
 
-		VkCommandBufferAllocateInfo cmdAllocInfo = Quest::command_buffer_allocate_info(_frames[i]._commandPool, 1);
+		VkCommandBufferAllocateInfo cmdAllocInfo = vkn::command_buffer_allocate_info(_frames[i]._commandPool, 1);
 		VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_frames[i]._mainCommandBuffer));
 
 		_mainDeletionQueue.push_function([=]()
@@ -251,7 +251,7 @@ void Vulkaneer::init_commands()
 		});
 	}
 
-	VkCommandPoolCreateInfo uploadCommandPoolInfo = Quest::command_pool_create_info(_graphicsQueueFamily);
+	VkCommandPoolCreateInfo uploadCommandPoolInfo = vkn::command_pool_create_info(_graphicsQueueFamily);
 	VK_CHECK(vkCreateCommandPool(_device, &uploadCommandPoolInfo, nullptr, &_uploadContext._commandPool));
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroyCommandPool(_device, _uploadContext._commandPool, nullptr);
@@ -313,7 +313,7 @@ void Vulkaneer::init_default_renderpass()
 
 void Vulkaneer::init_framebuffers()
 {
-	VkFramebufferCreateInfo fb_info = Quest::framebuffer_create_info(_renderPass, { _windowExtent.width, _windowExtent.height });
+	VkFramebufferCreateInfo fb_info = vkn::framebuffer_create_info(_renderPass, { _windowExtent.width, _windowExtent.height });
 	const uint32_t swapchain_imagecount = static_cast<uint32_t>(_swapchainImages.size());
 	_framebuffers = std::vector<VkFramebuffer>(swapchain_imagecount);
 
@@ -337,8 +337,8 @@ void Vulkaneer::init_framebuffers()
 
 void Vulkaneer::init_sync_structures()
 {
-	VkFenceCreateInfo fenceCreateInfo = Quest::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
-	VkSemaphoreCreateInfo semaphoreCreateInfo = Quest::semaphore_create_info();
+	VkFenceCreateInfo fenceCreateInfo = vkn::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
+	VkSemaphoreCreateInfo semaphoreCreateInfo = vkn::semaphore_create_info();
 
 	for (int i = 0; i < FRAME_OVERLAP; ++i)
 	{
@@ -354,7 +354,7 @@ void Vulkaneer::init_sync_structures()
 		});
 	}
 
-	VkFenceCreateInfo uploadFenceCreateInfo = Quest::fence_create_info();
+	VkFenceCreateInfo uploadFenceCreateInfo = vkn::fence_create_info();
 	VK_CHECK(vkCreateFence(_device, &uploadFenceCreateInfo, nullptr, &_uploadContext._uploadFence));
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroyFence(_device, _uploadContext._uploadFence, nullptr);
@@ -380,8 +380,8 @@ void Vulkaneer::init_descriptors()
 	pool_info.pPoolSizes = sizes.data();
 	vkCreateDescriptorPool(_device, &pool_info, nullptr, &_descriptorPool);
 
-	VkDescriptorSetLayoutBinding cameraBind = Quest::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
-	VkDescriptorSetLayoutBinding sceneBind = Quest::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+	VkDescriptorSetLayoutBinding cameraBind = vkn::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+	VkDescriptorSetLayoutBinding sceneBind = vkn::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1);
 	VkDescriptorSetLayoutBinding bindings[] = { cameraBind , sceneBind };
 
 	VkDescriptorSetLayoutCreateInfo setinfo = {};
@@ -392,7 +392,7 @@ void Vulkaneer::init_descriptors()
 	setinfo.pBindings = bindings;
 	vkCreateDescriptorSetLayout(_device, &setinfo, nullptr, &_globalSetLayout);
 
-	VkDescriptorSetLayoutBinding objectBind = Quest::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+	VkDescriptorSetLayoutBinding objectBind = vkn::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
 	VkDescriptorSetLayoutCreateInfo set2info = {};
 	set2info.bindingCount = 1;
 	set2info.flags = 0;
@@ -401,7 +401,7 @@ void Vulkaneer::init_descriptors()
 	set2info.pBindings = &objectBind;
 	vkCreateDescriptorSetLayout(_device, &set2info, nullptr, &_objectSetLayout);
 
-	VkDescriptorSetLayoutBinding textureBind = Quest::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+	VkDescriptorSetLayoutBinding textureBind = vkn::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
 	VkDescriptorSetLayoutCreateInfo set3info = {};
 	set3info.bindingCount = 1;
 	set3info.flags = 0;
@@ -451,9 +451,9 @@ void Vulkaneer::init_descriptors()
 		objectBufferInfo.offset = 0;
 		objectBufferInfo.range = sizeof(GPUObjectData) * MAX_OBJECTS;
 
-		VkWriteDescriptorSet cameraWrite = Quest::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _frames[i].globalDescriptor, &cameraInfo, 0);
-		VkWriteDescriptorSet sceneWrite = Quest::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, _frames[i].globalDescriptor, &sceneInfo, 1);
-		VkWriteDescriptorSet objectWrite = Quest::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _frames[i].objectDescriptor, &objectBufferInfo, 0);
+		VkWriteDescriptorSet cameraWrite = vkn::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _frames[i].globalDescriptor, &cameraInfo, 0);
+		VkWriteDescriptorSet sceneWrite = vkn::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, _frames[i].globalDescriptor, &sceneInfo, 1);
+		VkWriteDescriptorSet objectWrite = vkn::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _frames[i].objectDescriptor, &objectBufferInfo, 0);
 		VkWriteDescriptorSet setWrites[] = { cameraWrite, sceneWrite, objectWrite };
 		vkUpdateDescriptorSets(_device, 3, setWrites, 0, nullptr);
 	}
@@ -495,7 +495,7 @@ void Vulkaneer::init_pipelines()
 
 	VkPipelineLayout meshPipelineLayout;
 	VkDescriptorSetLayout setLayouts[] = { _globalSetLayout, _objectSetLayout, _singleTextureSetLayout };
-	VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = Quest::pipeline_layout_create_info();
+	VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = vkn::pipeline_layout_create_info();
 	//mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
 	//mesh_pipeline_layout_info.pushConstantRangeCount = 1;
 	mesh_pipeline_layout_info.setLayoutCount = 3;
@@ -505,14 +505,14 @@ void Vulkaneer::init_pipelines()
 	VertexInputDescription vertexDescription = Vertex::get_vertex_description();
 
 	PipelineBuilder pipelineBuilder;
-	pipelineBuilder._shaderStages.push_back(Quest::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
-	pipelineBuilder._shaderStages.push_back(Quest::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, meshFragShader));
-	pipelineBuilder._vertexInputInfo = Quest::vertex_input_state_create_info();
+	pipelineBuilder._shaderStages.push_back(vkn::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
+	pipelineBuilder._shaderStages.push_back(vkn::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, meshFragShader));
+	pipelineBuilder._vertexInputInfo = vkn::vertex_input_state_create_info();
 	pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
 	pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
 	pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
 	pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
-	pipelineBuilder._inputAssembly = Quest::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+	pipelineBuilder._inputAssembly = vkn::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 	pipelineBuilder._viewport.x = 0.0f;
 	pipelineBuilder._viewport.y = 0.0f;
 	pipelineBuilder._viewport.width = (float)_windowExtent.width;
@@ -521,10 +521,10 @@ void Vulkaneer::init_pipelines()
 	pipelineBuilder._viewport.maxDepth = 1.0f;
 	pipelineBuilder._scissor.offset = { 0, 0 };
 	pipelineBuilder._scissor.extent = _windowExtent;
-	pipelineBuilder._rasterizer = Quest::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
-	pipelineBuilder._multisampling = Quest::multisampling_state_create_info();
-	pipelineBuilder._colorBlendAttachment = Quest::color_blend_attachment_state();
-	pipelineBuilder._depthStencil = Quest::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
+	pipelineBuilder._rasterizer = vkn::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
+	pipelineBuilder._multisampling = vkn::multisampling_state_create_info();
+	pipelineBuilder._colorBlendAttachment = vkn::color_blend_attachment_state();
+	pipelineBuilder._depthStencil = vkn::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
 	pipelineBuilder._pipelineLayout = meshPipelineLayout;
 
 	VkPipeline meshPipeline;
@@ -570,7 +570,7 @@ void Vulkaneer::init_scene()
 	map.transformMatrix = glm::translate(glm::vec3{ 5,-10,0 });
 	_renderables.push_back(map);
 
-	VkSamplerCreateInfo samplerInfo = Quest::sampler_create_info(VK_FILTER_NEAREST);
+	VkSamplerCreateInfo samplerInfo = vkn::sampler_create_info(VK_FILTER_NEAREST);
 	VkSampler blockySampler;
 	vkCreateSampler(_device, &samplerInfo, nullptr, &blockySampler);
 
@@ -587,7 +587,7 @@ void Vulkaneer::init_scene()
 	imageBufferInfo.sampler = blockySampler;
 	imageBufferInfo.imageView = _loadedTextures["empire_diffuse"].imageView;
 	imageBufferInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	VkWriteDescriptorSet texture1 = Quest::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texturedMat->textureSet, &imageBufferInfo, 0);
+	VkWriteDescriptorSet texture1 = vkn::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texturedMat->textureSet, &imageBufferInfo, 0);
 	vkUpdateDescriptorSets(_device, 1, &texture1, 0, nullptr);
 
 	_mainDeletionQueue.push_function([=]()
@@ -629,8 +629,8 @@ bool Vulkaneer::load_shader_module(const char* filePath, VkShaderModule* outShad
 void Vulkaneer::load_images()
 {
 	Texture lostEmpire;
-	Quest::load_image_from_file(*this, "../../assets/lost_empire-RGBA.png", lostEmpire.image);
-	VkImageViewCreateInfo imageinfo = Quest::imageview_create_info(VK_FORMAT_R8G8B8A8_SRGB, lostEmpire.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkn::load_image_from_file(*this, "../../assets/lost_empire-RGBA.png", lostEmpire.image);
+	VkImageViewCreateInfo imageinfo = vkn::imageview_create_info(VK_FORMAT_R8G8B8A8_SRGB, lostEmpire.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	vkCreateImageView(_device, &imageinfo, nullptr, &lostEmpire.imageView);
 	_loadedTextures["empire_diffuse"] = lostEmpire;
 
@@ -843,16 +843,16 @@ size_t Vulkaneer::pad_uniform_buffer_size(size_t originalSize)
 
 void Vulkaneer::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function)
 {
-	VkCommandBufferAllocateInfo cmdAllocInfo = Quest::command_buffer_allocate_info(_uploadContext._commandPool, 1);
+	VkCommandBufferAllocateInfo cmdAllocInfo = vkn::command_buffer_allocate_info(_uploadContext._commandPool, 1);
 	VkCommandBuffer cmd;
 	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &cmd));
 
-	VkCommandBufferBeginInfo cmdBeginInfo = Quest::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+	VkCommandBufferBeginInfo cmdBeginInfo = vkn::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
 	function(cmd);
 	VK_CHECK(vkEndCommandBuffer(cmd));
 
-	VkSubmitInfo submit = Quest::submit_info(&cmd);
+	VkSubmitInfo submit = vkn::submit_info(&cmd);
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit, _uploadContext._uploadFence));
 
 	vkWaitForFences(_device, 1, &_uploadContext._uploadFence, true, 9999999999);

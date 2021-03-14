@@ -1,7 +1,7 @@
 #pragma once 
 #include "vk_types.h"
 
-namespace Quest
+namespace vkn
 {
 	VkBufferMemoryBarrier buffer_barrier(VkBuffer buffer, uint32_t queue);
 	VkBufferCreateInfo buffer_create_info(uint32_t size, VkBufferUsageFlags usage);

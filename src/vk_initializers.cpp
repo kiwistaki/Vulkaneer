@@ -1,6 +1,6 @@
 #include "vk_initializers.h"
 
-namespace Quest
+namespace vkn
 {
 	VkBufferMemoryBarrier buffer_barrier(VkBuffer buffer, uint32_t queue)
 	{
